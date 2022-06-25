@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"math/big"
+	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
 
@@ -13,19 +15,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// TODO: load from config
-const RPC_URL = ""
-
 type Indexer struct {
 	db        *database.Database
 	ethClient *ethclient.Client
 }
 
-func NewIndexer(rpcUrl string, db *database.Database) (i *Indexer, err error) {
+func NewIndexer(db *database.Database) (i *Indexer, err error) {
+	conf := config.GetConfig().Indexer
 	i = &Indexer{
 		db: db,
 	}
-	i.ethClient, err = ethclient.Dial(rpcUrl)
+	i.ethClient, err = ethclient.Dial(conf.RpcUrl)
 	if err != nil {
 		return
 	}
@@ -87,6 +87,8 @@ func (i *Indexer) syncBlock(num uint64) (err error) {
 	if err != nil {
 		return
 	}
+
+	log.Printf("Got block %d with %d txs", num, len(block.Transactions()))
 
 	blockDB := &model.Block{
 		Number:     block.NumberU64(),

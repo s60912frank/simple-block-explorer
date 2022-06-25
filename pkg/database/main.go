@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"portto-explorer/pkg/model"
 	"time"
 
 	"github.com/jpillora/backoff"
@@ -39,8 +40,11 @@ func New(dbOptions *DBOptions) *Database {
 		Max:    32 * time.Second,
 	}
 
+	var db *gorm.DB
+	var err error
+
 	for {
-		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			CreateBatchSize: 100,
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
@@ -58,15 +62,20 @@ func New(dbOptions *DBOptions) *Database {
 		}
 		//connected
 		b.Reset()
+		break
+	}
 
-		d := db
-		// if config := Config.GetConfig(); config.Settings.DebugMode {
-		// 	d = db.Debug()
-		// }
-		dbInstance := &Database{
-			DB: d,
-		}
-		return dbInstance
+	// do auto migration
+	db.AutoMigrate([]interface{}{
+		&model.Block{},
+		&model.Transaction{},
+	}...)
+
+	// if config := Config.GetConfig(); config.Settings.DebugMode {
+	// 	d = db.Debug()
+	// }
+	return &Database{
+		DB: db,
 	}
 }
 
