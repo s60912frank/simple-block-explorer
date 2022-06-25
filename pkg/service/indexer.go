@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log"
 	"math/big"
@@ -36,6 +37,14 @@ func NewIndexer(db *database.Database) (i *Indexer, err error) {
 }
 
 func (i *Indexer) Run() (err error) {
+	// get latest block number
+	// TODO: manage context
+	var latestBlockNum uint64
+	latestBlockNum, err = i.ethClient.BlockNumber(context.Background())
+	if err != nil {
+		return
+	}
+
 	var latestBlockInDB model.Block
 	var oldestBlockInDB model.Block
 	err = i.db.Tx(func(tx *gorm.DB) error {
@@ -51,18 +60,10 @@ func (i *Indexer) Run() (err error) {
 		return
 	}
 
-	// get latest block number
-	// TODO: manage context
-	var latestBlockNum uint64
-	latestBlockNum, err = i.ethClient.BlockNumber(context.Background())
-	if err != nil {
-		return
-	}
-
 	// TODO: put sync in go-routine?
 	if err != nil {
 		// database is empty, sync from latest
-		i.syncBlocks(0, latestBlockNum)
+		i.syncBlocks(latestBlockNum, 0)
 	} else {
 		i.syncBlocks(latestBlockInDB.Number, latestBlockNum)
 		if oldestBlockInDB.Number != 0 {
@@ -105,9 +106,19 @@ func (i *Indexer) keepSync() (err error) {
 
 func (i *Indexer) syncBlocks(fromBlock, toBlock uint64) (err error) {
 	// TODO: need some performance tuning
-	for n := fromBlock; n <= toBlock; n++ {
-		i.syncBlock(n)
+
+	if fromBlock > toBlock {
+		// scan backward
+		for n := fromBlock; n >= toBlock; n-- {
+			i.syncBlock(n)
+		}
+	} else {
+		// scan forward
+		for n := fromBlock; n <= toBlock; n++ {
+			i.syncBlock(n)
+		}
 	}
+
 	return
 }
 
@@ -147,21 +158,27 @@ func (i *Indexer) syncBlock(num uint64) (err error) {
 		}
 
 		txDB := &model.Transaction{
-			Hash:      tx.Hash().Hex(),
-			BlockHash: blockDB.Hash,
-			From:      from.Hex(),
-			To:        tx.To().Hex(),
-			Nonce:     tx.Nonce(),
-			Data:      tx.Data(),
-			Value:     tx.Value().Uint64(),
-			Logs:      txReceipt.Logs,
+			Hash:         tx.Hash().Hex(),
+			RefBlockHash: blockDB.Hash,
+			From:         from.Hex(),
+			Data:         hex.EncodeToString(tx.Data()),
+			Nonce:        tx.Nonce(),
+			Value:        tx.Value().Uint64(),
+			Logs:         txReceipt.Logs,
+		}
+		if tx.To() != nil {
+			to := tx.To().Hex()
+			txDB.To = &to
 		}
 
 		blockDB.Transactions = append(blockDB.Transactions, txDB)
 	}
 
 	err = i.db.Tx(func(tx *gorm.DB) error {
-		return tx.Session(&gorm.Session{FullSaveAssociations: true}).Save(&blockDB).Error
+		// save block
+		// blockDB.Transactions = []*model.Transaction{}
+		// return tx.Save(&blockDB).Error
+		return tx.Session(&gorm.Session{FullSaveAssociations: true}).Create(&blockDB).Error
 	})
 	return
 }
