@@ -1,0 +1,16 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:13-alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=wowverysecret
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:

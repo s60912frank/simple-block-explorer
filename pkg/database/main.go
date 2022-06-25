@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/model"
 	"time"
 
@@ -22,16 +23,17 @@ type Database struct {
 	DB *gorm.DB
 }
 
-func New(dbOptions *DBOptions) *Database {
-	if len(dbOptions.User) == 0 {
+func New() *Database {
+	dbConfig := config.GetConfig().Database
+	if len(dbConfig.User) == 0 {
 		panic("db user is empty")
 	}
-	if len(dbOptions.Password) == 0 {
+	if len(dbConfig.Password) == 0 {
 		panic("db password is empty")
 	}
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		dbOptions.Host, dbOptions.User, dbOptions.Password, dbOptions.Name, dbOptions.Port,
+		dbConfig.Host, dbConfig.User, dbConfig.Password, dbConfig.Name, dbConfig.Port,
 	)
 
 	b := &backoff.Backoff{

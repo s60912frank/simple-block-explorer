@@ -8,7 +8,9 @@ import (
 	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
+	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -44,7 +46,7 @@ func (i *Indexer) Run() (err error) {
 		return tx.Select("number").Order("number ASC").First(&oldestBlockInDB).Error
 	})
 
-	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		// if it's error other than not found, throw it
 		return
 	}
@@ -69,7 +71,36 @@ func (i *Indexer) Run() (err error) {
 		}
 	}
 
+	i.keepSync()
+
 	return
+}
+
+// this function will keep checking latest blocks
+func (i *Indexer) keepSync() (err error) {
+	// get latest block number in db
+	var latestBlockInDB model.Block
+	err = i.db.Tx(func(tx *gorm.DB) error {
+		return tx.Select("number").Order("number DESC").First(&latestBlockInDB).Error
+	})
+
+	if err != nil {
+		// at this point db should not be empty
+		return
+	}
+
+	blockNum := latestBlockInDB.Number + 1
+	for {
+		var blockH *ethTypes.Header
+		blockH, err = i.ethClient.HeaderByNumber(context.Background(), big.NewInt(int64(blockNum)))
+		if errors.Is(err, ethereum.NotFound) {
+			// block not yet produced, wait few seconds and retry
+			time.Sleep(time.Second * 5)
+			continue
+		}
+
+		i.syncBlock(blockH.Number.Uint64())
+	}
 }
 
 func (i *Indexer) syncBlocks(fromBlock, toBlock uint64) (err error) {
@@ -92,8 +123,8 @@ func (i *Indexer) syncBlock(num uint64) (err error) {
 
 	blockDB := &model.Block{
 		Number:     block.NumberU64(),
-		Hash:       block.Hash(),
-		ParentHash: block.ParentHash(),
+		Hash:       block.Hash().Hex(),
+		ParentHash: block.ParentHash().Hex(),
 		Timestamp:  block.Time(),
 	}
 
@@ -116,10 +147,10 @@ func (i *Indexer) syncBlock(num uint64) (err error) {
 		}
 
 		txDB := &model.Transaction{
-			Hash:      tx.Hash(),
+			Hash:      tx.Hash().Hex(),
 			BlockHash: blockDB.Hash,
-			From:      from,
-			To:        *tx.To(),
+			From:      from.Hex(),
+			To:        tx.To().Hex(),
 			Nonce:     tx.Nonce(),
 			Data:      tx.Data(),
 			Value:     tx.Value().Uint64(),
