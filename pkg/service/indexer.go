@@ -68,24 +68,7 @@ func (i *Indexer) Run() (err error) {
 		return
 	}
 
-	// find block numbers in db
-	var blockNumbersInDB []uint64
-	err = i.db.Tx(func(tx *gorm.DB) error {
-		return tx.Model(&model.Block{}).Select("number").Find(&blockNumbersInDB).Error
-	})
-	if err != nil {
-		return
-	}
-	blocksToGet := make(map[uint64]struct{})
-	var n uint64
-	for ; n <= latestBlockNum; n++ {
-		blocksToGet[n] = struct{}{}
-	}
-	for _, n := range blockNumbersInDB {
-		delete(blocksToGet, n)
-	}
-
-	i.syncBlocks(blocksToGet)
+	i.syncBlocks(latestBlockNum)
 
 	i.keepSync()
 
@@ -119,9 +102,30 @@ func (i *Indexer) keepSync() (err error) {
 	}
 }
 
-func (i *Indexer) syncBlocks(blockNums map[uint64]struct{}) (err error) {
-	for n := range blockNums {
+func (i *Indexer) syncBlocks(latestBlockNum uint64) (err error) {
+	// find block numbers in db
+	var blockNumbersInDB []uint64
+	err = i.db.Tx(func(tx *gorm.DB) error {
+		return tx.Model(&model.Block{}).Select("number").Find(&blockNumbersInDB).Error
+	})
+	if err != nil {
+		return
+	}
+	blockNumberInDBMap := make(map[uint64]struct{})
+	for _, n := range blockNumbersInDB {
+		blockNumberInDBMap[n] = struct{}{}
+	}
+
+	for n := latestBlockNum; ; n-- {
+		if _, exist := blockNumberInDBMap[n]; exist {
+			continue
+		}
 		i.addGetBlockTask(n)
+
+		if n == 0 {
+			// n is uint, when n = 0, n-- will result in underflow, keep loop never stop
+			break
+		}
 	}
 
 	return
