@@ -2,17 +2,16 @@ package service
 
 import (
 	"context"
-	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"log"
 	"math/big"
 	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
 	"time"
 
+	"github.com/adjust/rmq/v4"
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"gorm.io/gorm"
@@ -21,19 +20,17 @@ import (
 type Indexer struct {
 	db        *database.Database
 	ethClient *ethclient.Client
+	q         rmq.Queue
+	qConn     rmq.Connection
 }
 
-func NewIndexer(db *database.Database) (i *Indexer, err error) {
-	conf := config.GetConfig().Indexer
-	i = &Indexer{
-		db: db,
+func NewIndexer(db *database.Database, ethClient *ethclient.Client, q rmq.Queue, qConn rmq.Connection) *Indexer {
+	return &Indexer{
+		db:        db,
+		ethClient: ethClient,
+		q:         q,
+		qConn:     qConn,
 	}
-	i.ethClient, err = ethclient.Dial(conf.RpcUrl)
-	if err != nil {
-		return
-	}
-
-	return
 }
 
 func (i *Indexer) Run() (err error) {
@@ -100,85 +97,49 @@ func (i *Indexer) keepSync() (err error) {
 			continue
 		}
 
-		i.syncBlock(blockH.Number.Uint64())
+		i.addGetBlockTask(blockH.Number.Uint64())
 	}
 }
 
 func (i *Indexer) syncBlocks(fromBlock, toBlock uint64) (err error) {
-	// TODO: need some performance tuning
-
 	if fromBlock > toBlock {
 		// scan backward
 		for n := fromBlock; n >= toBlock; n-- {
-			i.syncBlock(n)
+			i.addGetBlockTask(n)
 		}
 	} else {
 		// scan forward
 		for n := fromBlock; n <= toBlock; n++ {
-			i.syncBlock(n)
+			i.addGetBlockTask(n)
 		}
 	}
 
 	return
 }
 
-func (i *Indexer) syncBlock(num uint64) (err error) {
-	// TODO: context
-	var block *ethTypes.Block
-	block, err = i.ethClient.BlockByNumber(context.Background(), big.NewInt(int64(num)))
+func (i *Indexer) addGetBlockTask(blockNum uint64) (err error) {
+	// TODO: try make producer slower?
+	for {
+		qName := config.GetConfig().Indexer.TaskQueueName
+		s, _ := i.qConn.CollectStats([]string{qName})
+		stats := s.QueueStats[qName]
+		pendingCount := stats.ReadyCount + stats.RejectedCount
+		if pendingCount < 100 {
+			break
+		}
+		time.Sleep(time.Millisecond * time.Duration(pendingCount))
+	}
+
+	task := Task{
+		Type:        TaskTypeGetBlock,
+		BlockNumber: blockNum,
+	}
+
+	var payload []byte
+	payload, err = json.Marshal(&task)
 	if err != nil {
 		return
 	}
 
-	log.Printf("Got block %d with %d txs", num, len(block.Transactions()))
-
-	blockDB := &model.Block{
-		Number:     block.NumberU64(),
-		Hash:       block.Hash().Hex(),
-		ParentHash: block.ParentHash().Hex(),
-		Timestamp:  block.Time(),
-	}
-
-	for _, tx := range block.Transactions() {
-		var from common.Address
-		from, err = ethTypes.Sender(ethTypes.NewEIP155Signer(tx.ChainId()), tx)
-		if err != nil {
-			from, err = ethTypes.Sender(ethTypes.HomesteadSigner{}, tx)
-			if err != nil {
-				return
-			}
-		}
-
-		// get tx recipient
-		// TODO: this can be expensive
-		var txReceipt *ethTypes.Receipt
-		txReceipt, err = i.ethClient.TransactionReceipt(context.Background(), tx.Hash())
-		if err != nil {
-			return
-		}
-
-		txDB := &model.Transaction{
-			Hash:         tx.Hash().Hex(),
-			RefBlockHash: blockDB.Hash,
-			From:         from.Hex(),
-			Data:         hex.EncodeToString(tx.Data()),
-			Nonce:        tx.Nonce(),
-			Value:        tx.Value().Uint64(),
-			Logs:         txReceipt.Logs,
-		}
-		if tx.To() != nil {
-			to := tx.To().Hex()
-			txDB.To = &to
-		}
-
-		blockDB.Transactions = append(blockDB.Transactions, txDB)
-	}
-
-	err = i.db.Tx(func(tx *gorm.DB) error {
-		// save block
-		// blockDB.Transactions = []*model.Transaction{}
-		// return tx.Save(&blockDB).Error
-		return tx.Session(&gorm.Session{FullSaveAssociations: true}).Create(&blockDB).Error
-	})
-	return
+	return i.q.PublishBytes(payload)
 }

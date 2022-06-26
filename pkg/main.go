@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/service"
 	"syscall"
 	"time"
+
+	"github.com/adjust/rmq/v4"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 func main() {
@@ -27,10 +32,49 @@ func main() {
 		}
 	}()
 
-	indexer, err := service.NewIndexer(db)
+	conf := config.GetConfig().Indexer
+	ethClient, err := ethclient.Dial(conf.RpcUrl)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// open task queue
+	// TODO: handle error channel
+	redisConn, err := rmq.OpenConnection("my service", "tcp", "localhost:6379", 1, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	taskQueue, err := redisConn.OpenQueue(conf.TaskQueueName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		err := taskQueue.StartConsuming(100, time.Millisecond*500)
+		if err != nil {
+			panic(err)
+		}
+
+		for i := 0; i < 20; i++ {
+			name := fmt.Sprintf("consumer %d", i)
+			if _, err := taskQueue.AddConsumer(name, service.NewTaskConsumer(taskQueue, db, ethClient)); err != nil {
+				panic(err)
+			}
+		}
+
+		for {
+			time.Sleep(time.Second * 3)
+			returned, err := taskQueue.ReturnRejected(100)
+			if err != nil {
+				log.Printf("return rejected failed: %s", err)
+				continue
+			}
+			log.Printf("return %d rejected", returned)
+		}
+	}()
+
+	indexer := service.NewIndexer(db, ethClient, taskQueue, redisConn)
 
 	go func() {
 		// TODO: indexer graceful shutdown

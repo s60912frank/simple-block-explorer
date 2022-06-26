@@ -20,7 +20,9 @@ type Config struct {
 		Port string `env:"PORT" envDefault:"8080"`
 	}
 	Indexer struct {
-		RpcUrl string `env:"RPC_URL"`
+		RpcUrl        string `env:"RPC_URL"`
+		RedisEndpoint string `env:"REDIS_ENDPOINT" envDefault:"localhost:6379"`
+		TaskQueueName string `env:"TASK_QUEUE_NAME" envDefault:"task"`
 	}
 }
 

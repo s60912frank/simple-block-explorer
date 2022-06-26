@@ -13,6 +13,7 @@ type Transaction struct {
 	Data         string          `json:"data" gorm:"type:text"`
 	Value        uint64          `json:"value" gorm:"type:numeric; not null"` // TODO: bigint or unit64 ok?
 	Logs         []*ethTypes.Log `json:"logs" gorm:"type:jsonb"`
+	ReceiptReady bool            `json:"receipt_ready" grom:"type:boolean"`
 }
 
 func (t *Transaction) TableName() string {
