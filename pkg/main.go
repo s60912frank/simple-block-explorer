@@ -49,9 +49,11 @@ func main() {
 
 	go func() {
 		for {
-			s, _ := redisConn.CollectStats([]string{conf.TaskQueueName})
-			stats := s.QueueStats[conf.TaskQueueName]
-			log.Printf("queue stats: pending %d failed %d running %d", stats.ReadyCount, stats.RejectedCount, stats.UnackedCount())
+			s, _ := redisConn.CollectStats([]string{conf.BlockTaskQueueName, conf.TxReceiptTaskQueueName})
+			blockStats := s.QueueStats[conf.BlockTaskQueueName]
+			log.Printf("block queue stats: pending %d failed %d running %d", blockStats.ReadyCount, blockStats.RejectedCount, blockStats.UnackedCount())
+			txStats := s.QueueStats[conf.TxReceiptTaskQueueName]
+			log.Printf("tx queue stats: pending %d failed %d running %d", txStats.ReadyCount, txStats.RejectedCount, txStats.UnackedCount())
 
 			var blockCount, txCount, txWithoutReceiptCount int64
 			db.Tx(func(tx *gorm.DB) error {
@@ -66,36 +68,50 @@ func main() {
 		}
 	}()
 
-	taskQueue, err := redisConn.OpenQueue(conf.TaskQueueName)
+	blockTaskQueue, err := redisConn.OpenQueue(conf.BlockTaskQueueName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	txReceiptTaskQueue, err := redisConn.OpenQueue(conf.TxReceiptTaskQueueName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	go func() {
-		err := taskQueue.StartConsuming(100, time.Millisecond*500)
+		// start block queue
+		err := blockTaskQueue.StartConsuming(50, time.Millisecond*500)
 		if err != nil {
 			panic(err)
 		}
+		for i := 0; i < 50; i++ {
+			name := fmt.Sprintf("block consumer %d", i)
+			if _, err := blockTaskQueue.AddConsumer(name, service.NewBlockTaskConsumer(blockTaskQueue, db, ethClient)); err != nil {
+				panic(err)
+			}
+		}
 
-		for i := 0; i < 100; i++ {
-			name := fmt.Sprintf("consumer %d", i)
-			if _, err := taskQueue.AddConsumer(name, service.NewTaskConsumer(taskQueue, db, ethClient)); err != nil {
+		// start tx receipt queue
+		err = txReceiptTaskQueue.StartConsuming(50, time.Millisecond*500)
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < 50; i++ {
+			name := fmt.Sprintf("tx receipt consumer %d", i)
+			if _, err := txReceiptTaskQueue.AddConsumer(name, service.NewTxReceiptTaskConsumer(db, ethClient)); err != nil {
 				panic(err)
 			}
 		}
 
 		for {
 			time.Sleep(time.Second * 3)
-			returned, err := taskQueue.ReturnRejected(100)
-			if err != nil {
-				log.Printf("return rejected failed: %s", err)
-				continue
-			}
-			log.Printf("return %d rejected", returned)
+			// TODO: handle return error
+			blockQReturned, _ := blockTaskQueue.ReturnRejected(100)
+			txQReturned, _ := txReceiptTaskQueue.ReturnRejected(100)
+			log.Printf("return rejected: (block) %d (tx) %d", blockQReturned, txQReturned)
 		}
 	}()
 
-	indexer := service.NewIndexer(db, ethClient, taskQueue, redisConn)
+	indexer := service.NewIndexer(db, ethClient, blockTaskQueue, txReceiptTaskQueue)
 
 	go func() {
 		// TODO: indexer graceful shutdown

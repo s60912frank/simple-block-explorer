@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
@@ -17,18 +17,23 @@ import (
 )
 
 type Indexer struct {
-	db        *database.Database
-	ethClient *ethclient.Client
-	q         rmq.Queue
-	qConn     rmq.Connection
+	db                 *database.Database
+	ethClient          *ethclient.Client
+	blockTaskQueue     rmq.Queue
+	txReceiptTaskQueue rmq.Queue
 }
 
-func NewIndexer(db *database.Database, ethClient *ethclient.Client, q rmq.Queue, qConn rmq.Connection) *Indexer {
+func NewIndexer(
+	db *database.Database,
+	ethClient *ethclient.Client,
+	blockTaskQueue rmq.Queue,
+	txReceiptTaskQueue rmq.Queue,
+) *Indexer {
 	return &Indexer{
-		db:        db,
-		ethClient: ethClient,
-		q:         q,
-		qConn:     qConn,
+		db:                 db,
+		ethClient:          ethClient,
+		blockTaskQueue:     blockTaskQueue,
+		txReceiptTaskQueue: txReceiptTaskQueue,
 	}
 }
 
@@ -43,18 +48,7 @@ func (i *Indexer) Run() (err error) {
 	}
 
 	for _, tx := range pendingTxs {
-		task := Task{
-			Type:   TaskTypeGetTxReceipt,
-			TxHash: tx.Hash,
-		}
-
-		var payload []byte
-		payload, err = json.Marshal(&task)
-		if err != nil {
-			return
-		}
-
-		err = i.q.PublishBytes(payload)
+		err = i.txReceiptTaskQueue.Publish(tx.Hash)
 		if err != nil {
 			return
 		}
@@ -132,28 +126,5 @@ func (i *Indexer) syncBlocks(latestBlockNum uint64) (err error) {
 }
 
 func (i *Indexer) addGetBlockTask(blockNum uint64) (err error) {
-	// TODO: try make producer slower?
-	// for {
-	// 	qName := config.GetConfig().Indexer.TaskQueueName
-	// 	s, _ := i.qConn.CollectStats([]string{qName})
-	// 	stats := s.QueueStats[qName]
-	// 	pendingCount := stats.ReadyCount + stats.RejectedCount
-	// 	if pendingCount < 100 {
-	// 		break
-	// 	}
-	// 	time.Sleep(time.Millisecond * time.Duration(pendingCount))
-	// }
-
-	task := Task{
-		Type:        TaskTypeGetBlock,
-		BlockNumber: blockNum,
-	}
-
-	var payload []byte
-	payload, err = json.Marshal(&task)
-	if err != nil {
-		return
-	}
-
-	return i.q.PublishBytes(payload)
+	return i.blockTaskQueue.Publish(fmt.Sprintf("%d", blockNum))
 }
