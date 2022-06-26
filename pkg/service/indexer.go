@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
-	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
 	"time"
@@ -34,6 +33,33 @@ func NewIndexer(db *database.Database, ethClient *ethclient.Client, q rmq.Queue,
 }
 
 func (i *Indexer) Run() (err error) {
+	// check if there are pending tx receipt in db not processed yet
+	var pendingTxs []*model.Transaction
+	err = i.db.Tx(func(tx *gorm.DB) error {
+		return tx.Select("hash").Where("receipt_ready = ?", false).Find(&pendingTxs).Error
+	})
+	if err != nil {
+		return
+	}
+
+	for _, tx := range pendingTxs {
+		task := Task{
+			Type:   TaskTypeGetTxReceipt,
+			TxHash: tx.Hash,
+		}
+
+		var payload []byte
+		payload, err = json.Marshal(&task)
+		if err != nil {
+			return
+		}
+
+		err = i.q.PublishBytes(payload)
+		if err != nil {
+			return
+		}
+	}
+
 	// get latest block number
 	// TODO: manage context
 	var latestBlockNum uint64
@@ -42,32 +68,24 @@ func (i *Indexer) Run() (err error) {
 		return
 	}
 
-	var latestBlockInDB model.Block
-	var oldestBlockInDB model.Block
+	// find block numbers in db
+	var blockNumbersInDB []uint64
 	err = i.db.Tx(func(tx *gorm.DB) error {
-		err := tx.Select("number").Order("number DESC").First(&latestBlockInDB).Error
-		if err != nil {
-			return err
-		}
-		return tx.Select("number").Order("number ASC").First(&oldestBlockInDB).Error
+		return tx.Model(&model.Block{}).Select("number").Find(&blockNumbersInDB).Error
 	})
-
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		// if it's error other than not found, throw it
+	if err != nil {
 		return
 	}
-
-	// TODO: put sync in go-routine?
-	if err != nil {
-		// database is empty, sync from latest
-		i.syncBlocks(latestBlockNum, 0)
-	} else {
-		i.syncBlocks(latestBlockInDB.Number, latestBlockNum)
-		if oldestBlockInDB.Number != 0 {
-			// we haven't sync to oldest yet
-			i.syncBlocks(0, oldestBlockInDB.Number)
-		}
+	blocksToGet := make(map[uint64]struct{})
+	var n uint64
+	for ; n <= latestBlockNum; n++ {
+		blocksToGet[n] = struct{}{}
 	}
+	for _, n := range blockNumbersInDB {
+		delete(blocksToGet, n)
+	}
+
+	i.syncBlocks(blocksToGet)
 
 	i.keepSync()
 
@@ -101,17 +119,9 @@ func (i *Indexer) keepSync() (err error) {
 	}
 }
 
-func (i *Indexer) syncBlocks(fromBlock, toBlock uint64) (err error) {
-	if fromBlock > toBlock {
-		// scan backward
-		for n := fromBlock; n >= toBlock; n-- {
-			i.addGetBlockTask(n)
-		}
-	} else {
-		// scan forward
-		for n := fromBlock; n <= toBlock; n++ {
-			i.addGetBlockTask(n)
-		}
+func (i *Indexer) syncBlocks(blockNums map[uint64]struct{}) (err error) {
+	for n := range blockNums {
+		i.addGetBlockTask(n)
 	}
 
 	return
@@ -119,16 +129,16 @@ func (i *Indexer) syncBlocks(fromBlock, toBlock uint64) (err error) {
 
 func (i *Indexer) addGetBlockTask(blockNum uint64) (err error) {
 	// TODO: try make producer slower?
-	for {
-		qName := config.GetConfig().Indexer.TaskQueueName
-		s, _ := i.qConn.CollectStats([]string{qName})
-		stats := s.QueueStats[qName]
-		pendingCount := stats.ReadyCount + stats.RejectedCount
-		if pendingCount < 100 {
-			break
-		}
-		time.Sleep(time.Millisecond * time.Duration(pendingCount))
-	}
+	// for {
+	// 	qName := config.GetConfig().Indexer.TaskQueueName
+	// 	s, _ := i.qConn.CollectStats([]string{qName})
+	// 	stats := s.QueueStats[qName]
+	// 	pendingCount := stats.ReadyCount + stats.RejectedCount
+	// 	if pendingCount < 100 {
+	// 		break
+	// 	}
+	// 	time.Sleep(time.Millisecond * time.Duration(pendingCount))
+	// }
 
 	task := Task{
 		Type:        TaskTypeGetBlock,

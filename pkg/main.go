@@ -9,12 +9,14 @@ import (
 	"os/signal"
 	"portto-explorer/pkg/config"
 	"portto-explorer/pkg/database"
+	"portto-explorer/pkg/model"
 	"portto-explorer/pkg/service"
 	"syscall"
 	"time"
 
 	"github.com/adjust/rmq/v4"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -45,6 +47,25 @@ func main() {
 		log.Fatal(err)
 	}
 
+	go func() {
+		for {
+			s, _ := redisConn.CollectStats([]string{conf.TaskQueueName})
+			stats := s.QueueStats[conf.TaskQueueName]
+			log.Printf("queue stats: pending %d failed %d running %d", stats.ReadyCount, stats.RejectedCount, stats.UnackedCount())
+
+			var blockCount, txCount, txWithoutReceiptCount int64
+			db.Tx(func(tx *gorm.DB) error {
+				_ = tx.Model(&model.Block{}).Count(&blockCount).Error
+				_ = tx.Model(&model.Transaction{}).Count(&txCount).Error
+				_ = tx.Model(&model.Transaction{}).Where("receipt_ready = ?", false).Count(&txWithoutReceiptCount).Error
+				return nil
+			})
+			log.Printf("db stats: block %d tx %d tx w/o receipt %d", blockCount, txCount, txWithoutReceiptCount)
+
+			time.Sleep(time.Second * 3)
+		}
+	}()
+
 	taskQueue, err := redisConn.OpenQueue(conf.TaskQueueName)
 	if err != nil {
 		log.Fatal(err)
@@ -56,7 +77,7 @@ func main() {
 			panic(err)
 		}
 
-		for i := 0; i < 20; i++ {
+		for i := 0; i < 100; i++ {
 			name := fmt.Sprintf("consumer %d", i)
 			if _, err := taskQueue.AddConsumer(name, service.NewTaskConsumer(taskQueue, db, ethClient)); err != nil {
 				panic(err)

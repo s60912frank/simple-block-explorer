@@ -52,7 +52,7 @@ func (c *TaskConsumer) Consume(delivery rmq.Delivery) {
 				log.Fatalf("reject task failed: %s", err)
 			}
 		} else {
-			log.Printf("%s DONE", delivery.Payload())
+			// log.Printf("%s DONE", delivery.Payload())
 			if err := delivery.Ack(); err != nil {
 				log.Fatalf("ack task failed: %s", err)
 			}
@@ -83,7 +83,7 @@ func (c *TaskConsumer) handleGetBlock(blockNum uint64) (err error) {
 		return
 	}
 
-	log.Printf("Got block %d with %d txs", blockNum, len(block.Transactions()))
+	// log.Printf("Got block %d with %d txs", blockNum, len(block.Transactions()))
 	// check if block with same hash already in db
 	var count int64
 	err = c.db.Tx(func(tx *gorm.DB) error {
