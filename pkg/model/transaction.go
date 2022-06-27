@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/shopspring/decimal"
 )
 
 type DBTxLogs struct {
@@ -35,15 +34,15 @@ func (l *DBTxLogs) UnmarshalJSON(data []byte) error {
 }
 
 type Transaction struct {
-	Hash         string          `json:"tx_hash" gorm:"type:varchar(66); primarykey"`
-	RefBlockHash string          `json:"block_hash" gorm:"type:varchar(66); index:idx_tx_ref_block_hash; not null"`
-	From         string          `json:"from" gorm:"type:varchar(42); not null"`
-	To           *string         `json:"to" gorm:"type:varchar(42);"`
-	Nonce        uint64          `json:"nonce" gorm:"type:numeric; not null"`
-	Data         string          `json:"data" gorm:"type:text"`
-	Value        decimal.Decimal `json:"value" gorm:"type:decimal; not null"`
-	Logs         DBTxLogs        `json:"logs" gorm:"type:jsonb"`
-	ReceiptReady bool            `json:"receipt_ready" gorm:"type:boolean"`
+	Hash         string   `json:"tx_hash" gorm:"type:varchar(66); primarykey"`
+	RefBlockHash string   `json:"block_hash" gorm:"type:varchar(66); index:idx_tx_ref_block_hash; not null"`
+	From         string   `json:"from" gorm:"type:varchar(42); not null"`
+	To           *string  `json:"to" gorm:"type:varchar(42);"`
+	Nonce        uint64   `json:"nonce" gorm:"type:bigint; not null"`
+	Data         string   `json:"data" gorm:"type:text"`
+	Value        string   `json:"value" gorm:"type:varchar(64); not null"`
+	Logs         DBTxLogs `json:"logs" gorm:"type:jsonb"`
+	ReceiptReady bool     `json:"receipt_ready" gorm:"type:boolean"`
 }
 
 func (t *Transaction) TableName() string {

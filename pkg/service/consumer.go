@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -110,7 +109,7 @@ func (c *BlockTaskConsumer) handleGetBlock(blockNum uint64) (err error) {
 			From:         from.Hex(),
 			Data:         hex.EncodeToString(tx.Data()),
 			Nonce:        tx.Nonce(),
-			Value:        decimal.NewFromBigInt(tx.Value(), 0),
+			Value:        tx.Value().String(),
 		}
 		if tx.To() != nil {
 			to := tx.To().Hex()

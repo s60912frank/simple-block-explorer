@@ -119,4 +119,9 @@ func main() {
 	if err := webSrv.Shutdown(ctx); err != nil {
 		log.Fatal("Server forced to shutdown: ", err)
 	}
+
+	// shutdown database
+	if err := db.Close(); err != nil {
+		log.Fatal("Database shutdown error: ", err)
+	}
 }
