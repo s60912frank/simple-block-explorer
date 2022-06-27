@@ -22,6 +22,7 @@ type Config struct {
 	Indexer struct {
 		RpcUrl                 string `env:"RPC_URL"`
 		RedisEndpoint          string `env:"REDIS_ENDPOINT" envDefault:"localhost:6379"`
+		RedisTag               string `env:"REDIS_TAG" envDefault:"block indexer"`
 		BlockTaskQueueName     string `env:"BLOCK_TASK_QUEUE_NAME" envDefault:"block"`
 		TxReceiptTaskQueueName string `env:"TX_RECEIPT_TASK_QUEUE_NAME" envDefault:"txReceipt"`
 	}
@@ -36,6 +37,8 @@ func GetConfig() *Config {
 		if err := env.Parse(config); err != nil {
 			log.Fatalf("%+v\n", err)
 		}
+
+		log.Printf("config load: %+v", config)
 	})
 	return config
 }

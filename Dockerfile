@@ -1,8 +1,8 @@
 FROM golang:1.17-buster as builder
 
-COPY ../pkg /app
+COPY . /app
 WORKDIR /app
-RUN go get && go build -o /app/build/main main.go
+RUN go build -o /app/build/main ./pkg/main.go
 
 FROM busybox:1.34.0-glibc
 

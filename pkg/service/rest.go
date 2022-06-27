@@ -54,7 +54,6 @@ func (s *WebServer) GetBlocksHandler(c *gin.Context) (err error) {
 	var q GetBlocksQuery
 	err = c.ShouldBindQuery(&q)
 	if err != nil {
-		// TODO: will empty consider error?
 		return
 	}
 
@@ -99,7 +98,6 @@ func (s *WebServer) GetBlockByIDHandler(c *gin.Context) (err error) {
 	if err != nil {
 		return
 	}
-	// TODO: we will also need tx hashes in this block
 	c.JSON(http.StatusOK, block)
 
 	return

@@ -55,7 +55,6 @@ func (i *Indexer) Run() (err error) {
 	}
 
 	// get latest block number
-	// TODO: manage context
 	var latestBlockNum uint64
 	latestBlockNum, err = i.ethClient.BlockNumber(context.Background())
 	if err != nil {

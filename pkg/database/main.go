@@ -73,9 +73,6 @@ func New() *Database {
 		&model.Transaction{},
 	}...)
 
-	// if config := Config.GetConfig(); config.Settings.DebugMode {
-	// 	d = db.Debug()
-	// }
 	return &Database{
 		DB: db,
 	}

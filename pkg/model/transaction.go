@@ -19,9 +19,6 @@ func (l *DBTxLogs) Value() (driver.Value, error) {
 }
 
 func (l *DBTxLogs) Scan(value interface{}) error {
-	// if err := json.Unmarshal(value.([]byte), &l.Logs); err != nil {
-	// 	return err
-	// }
 	if v, ok := value.([]*types.Log); !ok {
 		l.Logs = v
 		return nil

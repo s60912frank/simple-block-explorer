@@ -8,6 +8,7 @@ import (
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
 	"strconv"
+	"time"
 
 	"github.com/adjust/rmq/v4"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,9 +57,11 @@ func (c *BlockTaskConsumer) Consume(delivery rmq.Delivery) {
 }
 
 func (c *BlockTaskConsumer) handleGetBlock(blockNum uint64) (err error) {
-	// TODO: context
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+
 	var block *ethTypes.Block
-	block, err = c.ethClient.BlockByNumber(context.Background(), big.NewInt(int64(blockNum)))
+	block, err = c.ethClient.BlockByNumber(ctx, big.NewInt(int64(blockNum)))
 	if err != nil {
 		return
 	}
@@ -163,8 +166,11 @@ func (c *TxReceiptTaskConsumer) Consume(delivery rmq.Delivery) {
 }
 
 func (c *TxReceiptTaskConsumer) handleGetTxReceipt(txHash string) (err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+
 	var txReceipt *ethTypes.Receipt
-	txReceipt, err = c.ethClient.TransactionReceipt(context.Background(), common.HexToHash(txHash))
+	txReceipt, err = c.ethClient.TransactionReceipt(ctx, common.HexToHash(txHash))
 	if err != nil {
 		return
 	}
