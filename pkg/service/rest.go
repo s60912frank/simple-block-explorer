@@ -8,6 +8,7 @@ import (
 	"portto-explorer/pkg/database"
 	"portto-explorer/pkg/model"
 	"portto-explorer/pkg/utils"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -81,7 +82,19 @@ func (s *WebServer) GetBlockByIDHandler(c *gin.Context) (err error) {
 
 	var block *model.Block
 	err = s.db.Tx(func(tx *gorm.DB) error {
-		return tx.Where("number = ? OR hash = ?", numOrHash, numOrHash).First(&block).Error
+		condition := "number = ?"
+		_, parseIntErr := strconv.ParseUint(numOrHash, 10, 64)
+		if parseIntErr != nil {
+			condition = "hash = ?"
+		}
+		err := tx.Where(condition, numOrHash).First(&block).Error
+		if err != nil {
+			return err
+		}
+		return tx.
+			Model(&model.Transaction{}).
+			Select("hash").
+			Where("ref_block_hash = ?", block.Hash).Find(&block.TransactionHash).Error
 	})
 	if err != nil {
 		return
@@ -99,14 +112,14 @@ func (s *WebServer) GetTransactionByHashHandler(c *gin.Context) (err error) {
 		return
 	}
 
-	var tx *model.Transaction
+	var transaction *model.Transaction
 	err = s.db.Tx(func(tx *gorm.DB) error {
-		return tx.Where("hash = ?", hash).First(&tx).Error
+		return tx.Where("hash = ?", hash).First(&transaction).Error
 	})
 	if err != nil {
 		return
 	}
-	c.JSON(http.StatusOK, tx)
+	c.JSON(http.StatusOK, transaction)
 
 	return
 }

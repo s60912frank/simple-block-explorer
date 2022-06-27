@@ -3,3 +3,4 @@ build
 tmp
 .env
 deployment/data
+**/__debug_bin

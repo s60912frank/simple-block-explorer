@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -83,6 +84,7 @@ func (c *BlockTaskConsumer) handleGetBlock(blockNum uint64) (err error) {
 		Timestamp:  block.Time(),
 	}
 
+	var transactionsDB []*model.Transaction
 	for _, tx := range block.Transactions() {
 		var from common.Address
 		from, err = ethTypes.Sender(ethTypes.NewEIP155Signer(tx.ChainId()), tx)
@@ -105,19 +107,26 @@ func (c *BlockTaskConsumer) handleGetBlock(blockNum uint64) (err error) {
 			From:         from.Hex(),
 			Data:         hex.EncodeToString(tx.Data()),
 			Nonce:        tx.Nonce(),
-			Value:        tx.Value().Uint64(),
+			Value:        decimal.NewFromBigInt(tx.Value(), 0),
 		}
 		if tx.To() != nil {
 			to := tx.To().Hex()
 			txDB.To = &to
 		}
 
-		blockDB.Transactions = append(blockDB.Transactions, txDB)
+		transactionsDB = append(transactionsDB, txDB)
 	}
 
 	err = c.db.Tx(func(tx *gorm.DB) error {
-		// save block
-		return tx.Session(&gorm.Session{FullSaveAssociations: true}).Create(&blockDB).Error
+		// save block and txs
+		if err := tx.Save(&blockDB).Error; err != nil {
+			return err
+		}
+
+		if len(transactionsDB) == 0 {
+			return nil
+		}
+		return tx.Save(&transactionsDB).Error
 	})
 	return
 }
@@ -164,7 +173,7 @@ func (c *TxReceiptTaskConsumer) handleGetTxReceipt(txHash string) (err error) {
 	err = c.db.Tx(func(tx *gorm.DB) error {
 		return tx.
 			Model(&model.Transaction{Hash: txHash}).
-			Updates(map[string]interface{}{"receipt_ready": true, "logs": txReceipt.Logs}).
+			Updates(map[string]interface{}{"receipt_ready": true, "logs": model.DBTxLogs{Logs: txReceipt.Logs}}).
 			Error
 	})
 	return

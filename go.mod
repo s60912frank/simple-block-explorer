@@ -57,6 +57,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-redis/redis/v8 v8.3.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/stretchr/testify v1.7.2 // indirect
 	go.opentelemetry.io/otel v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

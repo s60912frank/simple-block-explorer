@@ -85,7 +85,7 @@ func main() {
 		}
 		for i := 0; i < 50; i++ {
 			name := fmt.Sprintf("block consumer %d", i)
-			if _, err := blockTaskQueue.AddConsumer(name, service.NewBlockTaskConsumer(blockTaskQueue, db, ethClient)); err != nil {
+			if _, err := blockTaskQueue.AddConsumer(name, service.NewBlockTaskConsumer(txReceiptTaskQueue, db, ethClient)); err != nil {
 				panic(err)
 			}
 		}
