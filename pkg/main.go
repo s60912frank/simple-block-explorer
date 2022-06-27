@@ -40,7 +40,6 @@ func main() {
 	}
 
 	// open task queue
-	// TODO: handle error channel
 	redisErrCh := make(chan error)
 	redisConn, err := rmq.OpenConnection(conf.RedisTag, "tcp", conf.RedisEndpoint, 1, redisErrCh)
 	if err != nil {
