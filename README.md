@@ -37,3 +37,13 @@ This is a simple block explorer that should work with any EVM-compatible JSON RP
 * Test API
     * If you did not change `PORT` in `.env`, you should able to get latest blocks by open `http://localhost:8080/blocks`
 
+## Development
+* Run postgres and redis server
+    ```
+    docker compose -f ./development/docker-compose=dev.yml up -d
+    ```
+* Run application
+    ```
+    env $(cat ./.env | xargs) go run ./pkg/main.go
+    ```
+
